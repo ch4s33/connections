@@ -83,6 +83,7 @@ export default function EventDiscoverPage() {
     null
   );
   const [chatDraft, setChatDraft] = useState<string>("");
+  const [isRoomClosedByHost, setIsRoomClosedByHost] = useState<boolean>(false);
 
   const applyServerPayload = useCallback(
     (data: {
@@ -107,8 +108,16 @@ export default function EventDiscoverPage() {
             event.code
           )}/state?deviceToken=${encodeURIComponent(token)}`
         );
+        if (res.status === 410) {
+          setIsRoomClosedByHost(true);
+          return;
+        }
         if (res.ok) {
           const data = await res.json();
+          if (data.isClosed) {
+            setIsRoomClosedByHost(true);
+            return;
+          }
           applyServerPayload(data);
         }
       } catch {
@@ -1217,6 +1226,38 @@ export default function EventDiscoverPage() {
                 </button>
               </form>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Host Closed / Cancelled Room Modal */}
+      {isRoomClosedByHost && (
+        <div className="fixed inset-0 z-50 bg-[#160308]/95 backdrop-blur-md flex items-center justify-center p-5">
+          <div className="w-full max-w-[360px] rounded-[32px] bg-white text-[#2b0712] p-6 text-center space-y-4 shadow-2xl">
+            <div className="h-12 w-12 rounded-2xl bg-[#f7eff1] border border-[#eadadd] flex items-center justify-center text-[#541126] mx-auto">
+              <LogOut className="w-6 h-6" />
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-burgundy-700">
+                Room Closed & Ephemeral Data Purged
+              </span>
+              <h3 className="font-serif text-2xl text-[#2b0712]">
+                Event has ended
+              </h3>
+              <p className="text-xs text-[#6e4753] leading-relaxed">
+                The host has closed or cancelled this room. In accordance with
+                our privacy policy, all attendee looks, locations, and chat
+                histories have been permanently deleted from Supabase.
+              </p>
+            </div>
+
+            <Link
+              href="/"
+              className="w-full flex items-center justify-center gap-2 rounded-2xl bg-[#541126] text-white font-semibold py-3.5 px-4 text-xs shadow-md transition-all"
+            >
+              <span>Back to Home</span>
+            </Link>
           </div>
         </div>
       )}

@@ -4,6 +4,7 @@ import path from "path";
 import {
   AttendeeProfile,
   ChatMessage,
+  MutualMatch,
   ProximityBand,
 } from "@/types/event";
 import {
@@ -11,6 +12,7 @@ import {
   INITIAL_INCOMING_INTERESTS,
 } from "@/lib/mock-events";
 import { DATA_DIR, memoryStore } from "@/lib/server-store";
+import { supabaseAdmin } from "@/lib/supabase";
 
 interface StoredProfile extends AttendeeProfile {
   deviceToken: string;
@@ -42,6 +44,7 @@ interface StoredBlock {
 
 interface RoomStateData {
   eventCode: string;
+  isClosed?: boolean;
   profiles: StoredProfile[];
   interests: StoredInterest[];
   matches: StoredMatch[];
@@ -94,8 +97,226 @@ function formatRelativeTime(timestampMs: number): string {
   return `${Math.floor(diffMin / 60)}h ago`;
 }
 
+/**
+ * Ensure the event exists in Supabase events table.
+ * If not, insert a default event row.
+ */
+async function getOrEnsureEventInSupabase(cleanCode: string) {
+  try {
+    const { data: existing, error: selErr } = await supabaseAdmin
+      .from("events")
+      .select("id, code, is_active, name, venue")
+      .ilike("code", cleanCode)
+      .maybeSingle();
+
+    if (!selErr && existing) {
+      return existing;
+    }
+
+    // Auto-create room record in Supabase
+    const { data: created } = await supabaseAdmin
+      .from("events")
+      .insert({
+        code: cleanCode,
+        name: `Room ${cleanCode}`,
+        venue: "Verified In-Person Venue",
+        city: "Lagos",
+        category: "rave",
+        is_active: true,
+      })
+      .select()
+      .single();
+
+    return created || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read room state from Supabase first, falling back to local file/memory store.
+ * If host closed/cancelled the event, returns isClosed = true and empty data.
+ */
 async function readRoomState(eventCode: string): Promise<RoomStateData> {
-  const cleanKey = eventCode.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "") || "DEFAULT";
+  const cleanKey =
+    eventCode.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "") || "DEFAULT";
+
+  // 1. Try reading from Supabase
+  try {
+    const eventRow = await getOrEnsureEventInSupabase(cleanKey);
+
+    if (eventRow && !eventRow.is_active) {
+      // Room was closed/cancelled by host: return empty state
+      const emptyState: RoomStateData = {
+        eventCode,
+        isClosed: true,
+        profiles: [],
+        interests: [],
+        matches: [],
+        blocks: [],
+      };
+      memoryStore.roomStates[cleanKey] = emptyState;
+      return emptyState;
+    }
+
+    if (eventRow && eventRow.id) {
+      // Fetch profiles
+      const { data: dbProfiles } = await supabaseAdmin
+        .from("attendee_profiles")
+        .select("*")
+        .eq("event_id", eventRow.id);
+
+      // If no profiles in Supabase yet, seed initial mock attendees into Supabase
+      if (!Array.isArray(dbProfiles) || dbProfiles.length === 0) {
+        const seedPayload = [
+          ...MOCK_ATTENDEES.map((p, idx) => ({
+            event_id: eventRow.id,
+            device_token: `seed_att_${idx}`,
+            display_name: p.displayName,
+            look_summary: p.lookSummary,
+            video_url: p.videoUrl,
+            is_discoverable: true,
+          })),
+          ...INITIAL_INCOMING_INTERESTS.map((p, idx) => ({
+            event_id: eventRow.id,
+            device_token: `seed_inc_${idx}`,
+            display_name: p.displayName,
+            look_summary: p.lookSummary,
+            video_url: p.videoUrl,
+            is_discoverable: true,
+          })),
+        ];
+
+        await supabaseAdmin.from("attendee_profiles").insert(seedPayload);
+      }
+
+      // Re-read attendees from Supabase
+      const { data: allDbProfiles } = await supabaseAdmin
+        .from("attendee_profiles")
+        .select("*")
+        .eq("event_id", eventRow.id);
+
+      // Fetch locations
+      const { data: dbLocations } = await supabaseAdmin
+        .from("attendee_locations")
+        .select("*");
+
+      const locationMap: Record<string, { lat: number; lng: number }> = {};
+      if (Array.isArray(dbLocations)) {
+        for (const loc of dbLocations) {
+          locationMap[loc.profile_id] = { lat: loc.lat, lng: loc.lng };
+        }
+      }
+
+      // Fetch interests
+      const { data: dbInterests } = await supabaseAdmin
+        .from("expressed_interests")
+        .select("*")
+        .eq("event_id", eventRow.id);
+
+      // Fetch matches
+      const { data: dbMatches } = await supabaseAdmin
+        .from("mutual_matches")
+        .select("*")
+        .eq("event_id", eventRow.id);
+
+      // Fetch messages for matches
+      const matchIds = (dbMatches || []).map((m) => m.id);
+      let dbMessages: Array<{
+        id: string;
+        match_id: string;
+        sender_profile_id: string;
+        body: string;
+        created_at: string;
+      }> = [];
+
+      if (matchIds.length > 0) {
+        const { data: msgs } = await supabaseAdmin
+          .from("chat_messages")
+          .select("*")
+          .in("match_id", matchIds)
+          .order("created_at", { ascending: true });
+        if (Array.isArray(msgs)) dbMessages = msgs;
+      }
+
+      // Fetch blocks
+      const { data: dbBlocks } = await supabaseAdmin
+        .from("blocks_reports")
+        .select("*")
+        .eq("event_id", eventRow.id);
+
+      if (Array.isArray(allDbProfiles) && allDbProfiles.length > 0) {
+        const mappedProfiles: StoredProfile[] = allDbProfiles.map((p) => {
+          const loc = locationMap[p.id];
+          return {
+            id: p.id,
+            eventId: eventRow.id,
+            deviceToken: p.device_token,
+            displayName: p.display_name,
+            lookSummary: p.look_summary,
+            videoUrl: p.video_url,
+            recordedAt: "Just now",
+            proximityBand: "very_nearby",
+            isDiscoverable: Boolean(p.is_discoverable),
+            lat: loc?.lat,
+            lng: loc?.lng,
+            updatedAtMs: new Date(p.updated_at).getTime(),
+          };
+        });
+
+        const mappedInterests: StoredInterest[] = (dbInterests || []).map(
+          (i) => ({
+            id: i.id,
+            senderProfileId: i.sender_profile_id,
+            recipientProfileId: i.recipient_profile_id,
+            status: i.status,
+            createdAt: i.created_at,
+          })
+        );
+
+        const mappedMatches: StoredMatch[] = (dbMatches || []).map((m) => {
+          const matchMsgs = dbMessages
+            .filter((msg) => msg.match_id === m.id)
+            .map((msg) => ({
+              id: msg.id,
+              matchId: m.id,
+              senderId: msg.sender_profile_id,
+              text: msg.body,
+              sentAt: "Just now",
+            }));
+
+          return {
+            id: m.id,
+            profileAId: m.profile_a_id,
+            profileBId: m.profile_b_id,
+            matchedAt: "Just now",
+            messages: matchMsgs,
+          };
+        });
+
+        const mappedBlocks: StoredBlock[] = (dbBlocks || []).map((b) => ({
+          reporterId: b.reporter_profile_id,
+          reportedId: b.reported_profile_id,
+        }));
+
+        const dbState: RoomStateData = {
+          eventCode,
+          isClosed: false,
+          profiles: mappedProfiles,
+          interests: mappedInterests,
+          matches: mappedMatches,
+          blocks: mappedBlocks,
+        };
+
+        memoryStore.roomStates[cleanKey] = dbState;
+        return dbState;
+      }
+    }
+  } catch {
+    // Fallback if Supabase network is unavailable
+  }
+
+  // 2. Fallback to local files & memory store
   const filePath = getRoomStateFile(eventCode);
   try {
     const raw = await fs.readFile(filePath, "utf-8");
@@ -122,6 +343,7 @@ async function readRoomState(eventCode: string): Promise<RoomStateData> {
 
     const initialState: RoomStateData = {
       eventCode,
+      isClosed: false,
       profiles: seededProfiles,
       interests: [],
       matches: [],
@@ -133,7 +355,8 @@ async function readRoomState(eventCode: string): Promise<RoomStateData> {
 }
 
 async function writeRoomState(state: RoomStateData): Promise<void> {
-  const cleanKey = state.eventCode.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "") || "DEFAULT";
+  const cleanKey =
+    state.eventCode.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "") || "DEFAULT";
   memoryStore.roomStates[cleanKey] = state;
   try {
     await fs.mkdir(DATA_DIR, { recursive: true });
@@ -143,11 +366,22 @@ async function writeRoomState(state: RoomStateData): Promise<void> {
       "utf-8"
     );
   } catch {
-    // Fallback to memoryStore.roomStates
+    // Fallback to memoryStore
   }
 }
 
 function buildClientPayload(state: RoomStateData, viewerDeviceToken: string) {
+  if (state.isClosed) {
+    return {
+      isClosed: true,
+      myProfile: null,
+      attendees: [],
+      sentInterests: {},
+      incomingInterests: [],
+      matches: [],
+    };
+  }
+
   const viewer = state.profiles.find(
     (p) => p.deviceToken === viewerDeviceToken
   );
@@ -234,7 +468,7 @@ function buildClientPayload(state: RoomStateData, viewerDeviceToken: string) {
   }
 
   // Mutual matches involving viewer
-  const clientMatches = state.matches
+  const clientMatches: MutualMatch[] = state.matches
     .filter(
       (m) =>
         (m.profileAId === viewerId || m.profileBId === viewerId) &&
@@ -254,9 +488,10 @@ function buildClientPayload(state: RoomStateData, viewerDeviceToken: string) {
         })),
       };
     })
-    .filter(Boolean);
+    .filter((m): m is MutualMatch => Boolean(m));
 
   return {
+    isClosed: false,
     myProfile: viewer ? sanitizeProfile(viewer) : null,
     attendees: discoverableProfiles,
     sentInterests: sentInterestsMap,
@@ -282,11 +517,25 @@ export async function POST(
   context: { params: Promise<{ eventCode: string }> }
 ) {
   const { eventCode } = await context.params;
+  const cleanCode =
+    eventCode.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "") || "DEFAULT";
   const body = await request.json();
   const action = body.action as string;
   const deviceToken = (body.deviceToken as string) || "anonymous";
 
+  const eventRow = await getOrEnsureEventInSupabase(cleanCode);
   const state = await readRoomState(eventCode);
+
+  if (state.isClosed) {
+    return NextResponse.json(
+      {
+        isClosed: true,
+        message: "This event room was closed or cancelled by the organiser.",
+      },
+      { status: 410 }
+    );
+  }
+
   let viewer = state.profiles.find((p) => p.deviceToken === deviceToken);
 
   if (action === "upsert_profile") {
@@ -294,12 +543,80 @@ export async function POST(
     const lookSummary = (
       body.lookSummary || "Live 8s selfie look · Face, hair & outfit verified"
     ).trim();
-    const videoUrl = body.videoUrl || "";
+    const videoUrl =
+      body.videoUrl ||
+      "https://assets.mixkit.co/videos/preview/mixkit-fashion-model-in-neon-lighting-39877-large.mp4";
+
+    // 1. Sync to Supabase attendee_profiles
+    let dbViewerId: string | undefined;
+    if (eventRow?.id) {
+      try {
+        const { data: dbProf } = await supabaseAdmin
+          .from("attendee_profiles")
+          .upsert(
+            {
+              event_id: eventRow.id,
+              device_token: deviceToken,
+              display_name: displayName,
+              look_summary: lookSummary,
+              video_url: videoUrl,
+              is_discoverable: true,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "event_id, device_token" }
+          )
+          .select()
+          .single();
+
+        if (dbProf?.id) {
+          dbViewerId = dbProf.id;
+
+          // If GPS lat/lng provided, upsert into attendee_locations
+          if (
+            typeof body.lat === "number" &&
+            typeof body.lng === "number"
+          ) {
+            await supabaseAdmin.from("attendee_locations").upsert(
+              {
+                profile_id: dbProf.id,
+                lat: body.lat,
+                lng: body.lng,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "profile_id" }
+            );
+          }
+
+          // Ensure incoming demo interests exist in Supabase for this attendee
+          const seedIncoming = state.profiles.filter((p) =>
+            p.deviceToken.startsWith("seed_inc_")
+          );
+          for (const inc of seedIncoming) {
+            await supabaseAdmin.from("expressed_interests").upsert(
+              {
+                event_id: eventRow.id,
+                sender_profile_id: inc.id,
+                recipient_profile_id: dbProf.id,
+                status: "pending",
+              },
+              {
+                onConflict:
+                  "event_id, sender_profile_id, recipient_profile_id",
+              }
+            );
+          }
+        }
+      } catch {
+        // Fallback to local
+      }
+    }
 
     if (!viewer) {
       viewer = {
-        id: `usr_${deviceToken.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12)}`,
-        eventId: `evt_${eventCode.toLowerCase()}`,
+        id:
+          dbViewerId ||
+          `usr_${deviceToken.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12)}`,
+        eventId: eventRow?.id || `evt_${eventCode.toLowerCase()}`,
         deviceToken,
         displayName,
         lookSummary,
@@ -313,7 +630,7 @@ export async function POST(
       };
       state.profiles.unshift(viewer);
 
-      // Seed the 2 demo incoming interests for this new user so they can also test incoming inbox right away
+      // Seed local incoming interests for immediate inbox display
       for (const inc of INITIAL_INCOMING_INTERESTS) {
         const alreadyExists = state.interests.some(
           (i) =>
@@ -330,6 +647,7 @@ export async function POST(
         }
       }
     } else {
+      if (dbViewerId) viewer.id = dbViewerId;
       viewer.displayName = displayName || viewer.displayName;
       if (body.lookSummary) viewer.lookSummary = lookSummary;
       if (body.videoUrl) viewer.videoUrl = videoUrl;
@@ -347,7 +665,7 @@ export async function POST(
   if (!viewer) {
     viewer = {
       id: `usr_${deviceToken.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12)}`,
-      eventId: `evt_${eventCode.toLowerCase()}`,
+      eventId: eventRow?.id || `evt_${eventCode.toLowerCase()}`,
       deviceToken,
       displayName: body.displayName || "Guest",
       lookSummary: "Live 8s selfie look · Face, hair & outfit verified",
@@ -389,6 +707,36 @@ export async function POST(
             },
           ],
         });
+
+        // Supabase sync for match & message
+        if (eventRow?.id) {
+          try {
+            await supabaseAdmin
+              .from("expressed_interests")
+              .update({ status: "mutual_match" })
+              .eq("id", reverseInterest.id);
+
+            const { data: dbMatch } = await supabaseAdmin
+              .from("mutual_matches")
+              .insert({
+                event_id: eventRow.id,
+                profile_a_id: viewer.id,
+                profile_b_id: recipientId,
+              })
+              .select()
+              .single();
+
+            if (dbMatch?.id) {
+              await supabaseAdmin.from("chat_messages").insert({
+                match_id: dbMatch.id,
+                sender_profile_id: recipientId,
+                body: "Hey! Spotted your look in the room — where are you standing?",
+              });
+            }
+          } catch {
+            // ignore
+          }
+        }
       } else {
         const existing = state.interests.find(
           (i) =>
@@ -403,6 +751,19 @@ export async function POST(
             status: "pending",
             createdAt: "Just now",
           });
+
+          if (eventRow?.id) {
+            try {
+              await supabaseAdmin.from("expressed_interests").insert({
+                event_id: eventRow.id,
+                sender_profile_id: viewer.id,
+                recipient_profile_id: recipientId,
+                status: "pending",
+              });
+            } catch {
+              // ignore
+            }
+          }
         }
       }
     }
@@ -436,9 +797,48 @@ export async function POST(
             },
           ],
         });
+
+        if (eventRow?.id) {
+          try {
+            await supabaseAdmin
+              .from("expressed_interests")
+              .update({ status: "mutual_match" })
+              .eq("id", incoming.id);
+
+            const { data: dbMatch } = await supabaseAdmin
+              .from("mutual_matches")
+              .insert({
+                event_id: eventRow.id,
+                profile_a_id: senderId,
+                profile_b_id: viewer.id,
+              })
+              .select()
+              .single();
+
+            if (dbMatch?.id) {
+              await supabaseAdmin.from("chat_messages").insert({
+                match_id: dbMatch.id,
+                sender_profile_id: senderId,
+                body: "Hey! Spotted your look in the room — where are you standing?",
+              });
+            }
+          } catch {
+            // ignore
+          }
+        }
       } else {
         // Private decline: sender receives no notification
         incoming.status = "declined";
+        if (eventRow?.id) {
+          try {
+            await supabaseAdmin
+              .from("expressed_interests")
+              .update({ status: "declined" })
+              .eq("id", incoming.id);
+          } catch {
+            // ignore
+          }
+        }
       }
     }
   } else if (action === "send_message") {
@@ -453,13 +853,47 @@ export async function POST(
         text,
         sentAt: "Just now",
       });
+
+      if (eventRow?.id) {
+        try {
+          await supabaseAdmin.from("chat_messages").insert({
+            match_id: matchId,
+            sender_profile_id: viewer.id,
+            body: text,
+          });
+        } catch {
+          // ignore
+        }
+      }
     }
   } else if (action === "toggle_pause") {
     viewer.isDiscoverable = Boolean(body.isDiscoverable);
+    if (eventRow?.id) {
+      try {
+        await supabaseAdmin
+          .from("attendee_profiles")
+          .update({ is_discoverable: viewer.isDiscoverable })
+          .eq("id", viewer.id);
+      } catch {
+        // ignore
+      }
+    }
   } else if (action === "leave_room") {
+    // Strict privacy: leaving the room deletes attendee profile & cascades
     state.profiles = state.profiles.filter(
       (p) => p.deviceToken !== deviceToken
     );
+    if (eventRow?.id) {
+      try {
+        await supabaseAdmin
+          .from("attendee_profiles")
+          .delete()
+          .eq("event_id", eventRow.id)
+          .eq("device_token", deviceToken);
+      } catch {
+        // ignore
+      }
+    }
   } else if (action === "block_report") {
     const reportedId = body.reportedProfileId as string;
     if (reportedId) {
@@ -467,6 +901,19 @@ export async function POST(
         reporterId: viewer.id,
         reportedId,
       });
+
+      if (eventRow?.id) {
+        try {
+          await supabaseAdmin.from("blocks_reports").insert({
+            event_id: eventRow.id,
+            reporter_profile_id: viewer.id,
+            reported_profile_id: reportedId,
+            reason: (body.reason as string) || "Reported in room",
+          });
+        } catch {
+          // ignore
+        }
+      }
     }
   }
 

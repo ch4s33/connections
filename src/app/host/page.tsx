@@ -14,6 +14,9 @@ import {
   Sparkles,
   X,
   BarChart3,
+  Trash2,
+  AlertTriangle,
+  ShieldCheck,
 } from "lucide-react";
 import { DEMO_EVENTS } from "@/lib/mock-events";
 import { EventCategory, EventDetails } from "@/types/event";
@@ -40,6 +43,11 @@ export default function HostDashboardPage() {
     useState<EventDetails | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [origin, setOrigin] = useState<string>("http://localhost:3000");
+
+  // Room Cancellation & Ephemeral Purge State
+  const [roomToCancel, setRoomToCancel] = useState<EventDetails | null>(null);
+  const [cancelNotice, setCancelNotice] = useState<string | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Create Room Form State
   const [name, setName] = useState("");
@@ -145,6 +153,35 @@ export default function HostDashboardPage() {
     }
   };
 
+  const handleConfirmCancelRoom = async () => {
+    if (!roomToCancel) return;
+    setIsCancelling(true);
+    const targetCode = roomToCancel.code;
+
+    try {
+      const res = await fetch(
+        `/api/rooms?code=${encodeURIComponent(targetCode)}`,
+        { method: "DELETE" }
+      );
+      const data = await res.json();
+
+      setRooms((prev) => prev.filter((r) => r.code !== targetCode));
+      if (selectedPosterRoom?.code === targetCode) {
+        setSelectedPosterRoom(null);
+      }
+      setRoomToCancel(null);
+      setCancelNotice(
+        `Event ${targetCode} cancelled. All attendee selfie looks, locations, and chat records were permanently purged from Supabase (${data.purgedCount || 0} profiles deleted).`
+      );
+      setTimeout(() => setCancelNotice(null), 6000);
+    } catch {
+      setCancelNotice(`Network error while cancelling room ${targetCode}.`);
+      setTimeout(() => setCancelNotice(null), 4000);
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
   const handleCopyRoomLink = (roomCode: string) => {
     const url = `${origin}/event/${encodeURIComponent(roomCode)}`;
     if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -183,6 +220,14 @@ export default function HostDashboardPage() {
           </span>
         </div>
       </header>
+
+      {/* Ephemeral Purge Notice Banner */}
+      {cancelNotice && (
+        <div className="mt-4 rounded-2xl bg-emerald-950/90 border border-emerald-500/40 text-emerald-200 p-3.5 text-xs flex items-center gap-2.5 shadow-lg">
+          <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+          <p className="leading-snug">{cancelNotice}</p>
+        </div>
+      )}
 
       {/* Editorial Heading */}
       <section className="my-5 space-y-2">
@@ -293,20 +338,20 @@ export default function HostDashboardPage() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 pt-1 border-t border-[#efe2e5] text-xs">
+              <div className="grid grid-cols-4 gap-1.5 pt-1 border-t border-[#efe2e5] text-[11px]">
                 <button
                   type="button"
                   onClick={() => setSelectedPosterRoom(room)}
-                  className="flex items-center justify-center gap-1.5 rounded-xl bg-[#f7eff1] hover:bg-[#efe2e5] text-[#2b0712] font-semibold py-2.5 px-2 transition-colors"
+                  className="flex items-center justify-center gap-1 rounded-xl bg-[#f7eff1] hover:bg-[#efe2e5] text-[#2b0712] font-semibold py-2.5 px-1.5 transition-colors"
                 >
                   <QrCode className="w-3.5 h-3.5" />
-                  <span>QR Poster</span>
+                  <span>Poster</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleCopyRoomLink(room.code)}
-                  className="flex items-center justify-center gap-1.5 rounded-xl bg-[#f7eff1] hover:bg-[#efe2e5] text-[#2b0712] font-semibold py-2.5 px-2 transition-colors"
+                  className="flex items-center justify-center gap-1 rounded-xl bg-[#f7eff1] hover:bg-[#efe2e5] text-[#2b0712] font-semibold py-2.5 px-1.5 transition-colors"
                 >
                   {copiedCode === room.code ? (
                     <>
@@ -316,7 +361,7 @@ export default function HostDashboardPage() {
                   ) : (
                     <>
                       <Copy className="w-3.5 h-3.5" />
-                      <span>Copy Link</span>
+                      <span>Link</span>
                     </>
                   )}
                 </button>
@@ -324,14 +369,24 @@ export default function HostDashboardPage() {
                 <button
                   type="button"
                   onClick={() => handleToggleRoomStatus(room)}
-                  className={`flex items-center justify-center gap-1.5 rounded-xl font-semibold py-2.5 px-2 transition-colors ${
+                  className={`flex items-center justify-center gap-1 rounded-xl font-semibold py-2.5 px-1.5 transition-colors ${
                     room.isActive
                       ? "bg-[#541126] hover:bg-[#691630] text-white"
                       : "bg-[#f7eff1] hover:bg-[#efe2e5] text-[#541126]"
                   }`}
                 >
                   <Power className="w-3.5 h-3.5" />
-                  <span>{room.isActive ? "Close Room" : "Reopen"}</span>
+                  <span>{room.isActive ? "Close" : "Reopen"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setRoomToCancel(room)}
+                  className="flex items-center justify-center gap-1 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 font-semibold py-2.5 px-1.5 transition-colors"
+                  title="Cancel Event and Purge All Data"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Cancel</span>
                 </button>
               </div>
             </div>
@@ -621,6 +676,65 @@ export default function HostDashboardPage() {
                 <span>Open Room</span>
                 <ArrowUpRight className="w-4 h-4" />
               </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ephemeral Event Cancellation & Purge Modal */}
+      {roomToCancel && (
+        <div className="fixed inset-0 z-50 bg-[#160308]/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-[380px] rounded-[32px] bg-white text-[#2b0712] p-6 shadow-2xl space-y-4">
+            <div className="h-12 w-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-red-700">
+                Cancel & Instant Ephemeral Purge
+              </span>
+              <h3 className="font-serif text-2xl text-[#2b0712]">
+                Cancel {roomToCancel.name}?
+              </h3>
+              <p className="text-xs text-[#6e4753] leading-relaxed">
+                As soon as you cancel this event room, <strong>all attendee selfie videos, locations, mutual matches, and chat histories will be immediately and irreversibly deleted</strong> from Supabase and our servers.
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-[#fdf5f5] border border-red-100 p-3 text-[11px] text-red-800 space-y-1 font-medium">
+              <p className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-red-600 shrink-0" />
+                Permanent cascade deletion in PostgreSQL
+              </p>
+              <p className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-red-600 shrink-0" />
+                Attendee profiles and looks will expire immediately
+              </p>
+              <p className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-red-600 shrink-0" />
+                This action cannot be undone
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setRoomToCancel(null)}
+                disabled={isCancelling}
+                className="w-full py-3 px-4 rounded-2xl bg-[#f7eff1] hover:bg-[#efe2e5] text-[#541126] font-semibold text-xs transition-colors"
+              >
+                Keep Event
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmCancelRoom}
+                disabled={isCancelling}
+                className="w-full py-3 px-4 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-semibold text-xs shadow-md transition-colors flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isCancelling ? "Purging..." : "Yes, Purge All"}</span>
+              </button>
             </div>
           </div>
         </div>
