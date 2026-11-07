@@ -43,6 +43,7 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
           rel="stylesheet"
         />
+        <link rel="manifest" href="/manifest.json" />
       </head>
       <body className="bg-[#1a040a] text-white antialiased selection:bg-white selection:text-burgundy-900">
         {/* Ambient radial burgundy glow behind the mobile viewport on larger screens */}
