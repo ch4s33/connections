@@ -1,0 +1,50 @@
+{
+  "NEON26": {
+    "id": "evt_neon_2026",
+    "code": "NEON26",
+    "name": "Neon Pulse Warehouse Rave",
+    "venue": "District 9 Warehouse, Victoria Island",
+    "city": "Lagos",
+    "category": "rave",
+    "startsAt": "2026-11-06T21:00:00Z",
+    "endsAt": "2026-11-07T06:00:00Z",
+    "isActive": true,
+    "activeParticipantCount": 84
+  },
+  "AFROFEST": {
+    "id": "evt_afrofest_2026",
+    "code": "AFROFEST",
+    "name": "Midnight Palms Music Festival",
+    "venue": "Landmark Beach Arena",
+    "city": "Lagos",
+    "category": "festival",
+    "startsAt": "2026-11-06T19:00:00Z",
+    "endsAt": "2026-11-07T05:00:00Z",
+    "isActive": true,
+    "activeParticipantCount": 142
+  },
+  "ROOFTOP": {
+    "id": "evt_rooftop_2026",
+    "code": "ROOFTOP",
+    "name": "Velvet Sky House Party",
+    "venue": "Skyline Terrace, Lekki Phase 1",
+    "city": "Lagos",
+    "category": "party",
+    "startsAt": "2026-11-06T22:00:00Z",
+    "endsAt": "2026-11-07T04:00:00Z",
+    "isActive": true,
+    "activeParticipantCount": 47
+  },
+  "PEEJAY01": {
+    "id": "evt_peejay01_1794080141306",
+    "code": "PEEJAY01",
+    "name": "Uncle peejays brunch party",
+    "venue": "Tribe lagos",
+    "city": "Lagos",
+    "category": "gathering",
+    "startsAt": "2026-11-07T19:35:41.306Z",
+    "endsAt": "",
+    "isActive": true,
+    "activeParticipantCount": 1
+  }
+}
