@@ -85,6 +85,20 @@ export async function purgeEventRoom(
         .eq("id", event.id);
     }
 
+    // Purge all uploaded selfie video files from Supabase Storage bucket event-looks
+    try {
+      const { data: files } = await supabaseAdmin.storage
+        .from("event-looks")
+        .list(cleanCode);
+
+      if (Array.isArray(files) && files.length > 0) {
+        const filePaths = files.map((f) => `${cleanCode}/${f.name}`);
+        await supabaseAdmin.storage.from("event-looks").remove(filePaths);
+      }
+    } catch {
+      // Storage cleanup fallback
+    }
+
     return {
       success: true,
       purgedProfilesCount: count ?? 0,
