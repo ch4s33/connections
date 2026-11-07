@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { RECORDING_CONFIG, RECORDING_PROMPTS } from "@/lib/mock-events";
 import { getSupportedVideoMimeType } from "@/lib/media";
+import { playHaptic, playSound } from "@/lib/audio-haptics";
 
 interface SelfieVideoRecorderProps {
   eventCode: string;
@@ -146,6 +147,8 @@ export function SelfieVideoRecorder({
     setRecordedBlob(file);
     setRecordedVideoUrl(url);
     setRecordedDuration(8);
+    playHaptic("success");
+    playSound("recording_complete");
     setPhase("preview");
   };
 
@@ -208,6 +211,8 @@ export function SelfieVideoRecorder({
         setRecordedBlob(videoBlob);
         setRecordedDuration(Math.round(duration * 10) / 10);
         setRecordedVideoUrl(videoUrl);
+        playHaptic("success");
+        playSound("recording_complete");
         setPhase("preview");
       };
 
@@ -236,14 +241,19 @@ export function SelfieVideoRecorder({
     setErrorMessage(null);
     setCountdownNum(3);
     setPhase("countdown");
+    playHaptic("light");
+    playSound("recording_tick");
 
     let current = 3;
     const interval = setInterval(() => {
       current -= 1;
       if (current <= 0) {
         clearInterval(interval);
+        playHaptic("medium");
         beginMediaRecording();
       } else {
+        playHaptic("light");
+        playSound("recording_tick");
         setCountdownNum(current);
       }
     }, 850);

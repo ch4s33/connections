@@ -5,6 +5,15 @@ export const metadata: Metadata = {
   title: "linger — Event Social Discovery",
   description:
     "Discover people around you, see how they look tonight, and express interest before the moment passes.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "linger.",
+  },
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export const viewport: Viewport = {

@@ -26,6 +26,8 @@ import {
   QUICK_ICEBREAKERS,
 } from "@/lib/mock-events";
 import { AttendeeProfile, MutualMatch, ProximityBand } from "@/types/event";
+import { supabase } from "@/lib/supabase";
+import { playHaptic, playSound } from "@/lib/audio-haptics";
 
 const PROXIMITY_LABELS: Record<ProximityBand, string> = {
   very_nearby: "Very Nearby",
@@ -84,6 +86,7 @@ export default function EventDiscoverPage() {
   );
   const [chatDraft, setChatDraft] = useState<string>("");
   const [isRoomClosedByHost, setIsRoomClosedByHost] = useState<boolean>(false);
+  const channelRef = React.useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const applyServerPayload = useCallback(
     (data: {
@@ -150,11 +153,64 @@ export default function EventDiscoverPage() {
     }
 
     fetchRoomState(token);
+
+    // Supabase Realtime WebSocket Connection (Section 3.10 & 3.11)
+    const roomChannel = supabase
+      .channel(`room_${event.code}`)
+      .on("broadcast", { event: "new_chat_message" }, ({ payload }) => {
+        if (payload?.matchId && payload.message) {
+          setMatches((prev) =>
+            prev.map((m) =>
+              m.id === payload.matchId
+                ? {
+                    ...m,
+                    messages: [
+                      ...m.messages.filter(
+                        (msg) => msg.id !== payload.message.id
+                      ),
+                      {
+                        ...payload.message,
+                        senderId:
+                          payload.senderToken === token
+                            ? "me"
+                            : payload.message.senderId,
+                      },
+                    ],
+                  }
+                : m
+            )
+          );
+          if (payload.senderToken !== token) {
+            playHaptic("light");
+            playSound("message_received");
+          }
+        }
+      })
+      .on("broadcast", { event: "new_interest" }, ({ payload }) => {
+        if (payload?.recipientId) {
+          fetchRoomState(token);
+        }
+      })
+      .on("broadcast", { event: "mutual_match" }, () => {
+        fetchRoomState(token);
+      })
+      .on("broadcast", { event: "room_closed" }, () => {
+        setIsRoomClosedByHost(true);
+      })
+      .subscribe();
+
+    channelRef.current = roomChannel;
+
     const interval = setInterval(() => {
       fetchRoomState(token);
-    }, 4000);
+    }, 5000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
+    };
   }, [event.code, fetchRoomState]);
 
   const showToast = (msg: string) => {
@@ -222,10 +278,22 @@ export default function EventDiscoverPage() {
   const handleSendInterest = async (attendee: AttendeeProfile) => {
     if (sentInterests[attendee.id]) return;
 
+    playHaptic("medium");
+    playSound("interest_sent");
+
     setSentInterests((prev) => ({
       ...prev,
       [attendee.id]: true,
     }));
+
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "new_interest",
+      payload: {
+        recipientId: attendee.id,
+        senderToken: deviceToken,
+      },
+    });
 
     const existingIncoming = incomingInterests.find(
       (inc) => inc.id === attendee.id
@@ -263,12 +331,24 @@ export default function EventDiscoverPage() {
 
   // Accept Incoming Identified Interest -> Creates Mutual Match (Section 3.10)
   const handleAcceptIncomingInterest = async (sender: AttendeeProfile) => {
+    playHaptic("celebration");
+    playSound("match_celebration");
+
     setIncomingInterests((prev) =>
       prev.filter((item) => item.id !== sender.id)
     );
     setSentInterests((prev) => ({ ...prev, [sender.id]: true }));
     setExpandedAttendee(null);
     setCelebratingMatch(sender);
+
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "mutual_match",
+      payload: {
+        tokenA: deviceToken,
+        senderId: sender.id,
+      },
+    });
 
     try {
       const res = await fetch(
@@ -381,6 +461,9 @@ export default function EventDiscoverPage() {
     const trimmed = textToSend.trim();
     if (!trimmed || !activeChatMatch) return;
 
+    playHaptic("light");
+    playSound("message_received");
+
     const optimisticMsg = {
       id: `msg_${Date.now()}`,
       matchId: activeChatMatch.id,
@@ -397,6 +480,16 @@ export default function EventDiscoverPage() {
       )
     );
     setChatDraft("");
+
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "new_chat_message",
+      payload: {
+        matchId: activeChatMatch.id,
+        senderToken: deviceToken,
+        message: optimisticMsg,
+      },
+    });
 
     try {
       const res = await fetch(

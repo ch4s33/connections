@@ -21,6 +21,7 @@ import {
 import { DEMO_EVENTS } from "@/lib/mock-events";
 import { EventCategory, EventDetails } from "@/types/event";
 import { generateQrMatrix } from "@/lib/qr-code";
+import { supabase } from "@/lib/supabase";
 
 interface RoomPilotMetrics {
   code: string;
@@ -143,6 +144,12 @@ export default function HostDashboardPage() {
     }
 
     try {
+      if (!nextActive) {
+        supabase
+          .channel(`room_${room.code}`)
+          .send({ type: "broadcast", event: "room_closed", payload: { code: room.code } })
+          .catch(() => {});
+      }
       await fetch("/api/rooms", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -159,6 +166,11 @@ export default function HostDashboardPage() {
     const targetCode = roomToCancel.code;
 
     try {
+      supabase
+        .channel(`room_${targetCode}`)
+        .send({ type: "broadcast", event: "room_closed", payload: { code: targetCode } })
+        .catch(() => {});
+
       const res = await fetch(
         `/api/rooms?code=${encodeURIComponent(targetCode)}`,
         { method: "DELETE" }
