@@ -543,9 +543,15 @@ export async function POST(
     const lookSummary = (
       body.lookSummary || "Live 8s selfie look · Face, hair & outfit verified"
     ).trim();
-    const videoUrl =
-      body.videoUrl ||
-      "https://assets.mixkit.co/videos/preview/mixkit-fashion-model-in-neon-lighting-39877-large.mp4";
+    let videoUrl = (body.videoUrl || "").trim();
+    if (
+      !videoUrl ||
+      videoUrl.startsWith("blob:") ||
+      videoUrl.includes("mixkit")
+    ) {
+      videoUrl =
+        "https://opqdlnpznymkgwbkyfix.supabase.co/storage/v1/object/public/event-looks/DEMO/demo_1.mp4";
+    }
 
     // 1. Sync to Supabase attendee_profiles
     let dbViewerId: string | undefined;

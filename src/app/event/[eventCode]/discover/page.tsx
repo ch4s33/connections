@@ -753,9 +753,16 @@ export default function EventDiscoverPage() {
                         loop
                         muted
                         playsInline
-                        className="absolute inset-0 w-full h-full object-cover z-0"
+                        ref={(el) => {
+                          if (el) {
+                            el.defaultMuted = true;
+                            el.muted = true;
+                            el.play().catch(() => {});
+                          }
+                        }}
+                        className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-transparent to-[#1e040c]/90 z-0" />
+                      <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-transparent to-[#1e040c]/90 z-0 pointer-events-none" />
                     </>
                   ) : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none px-4 text-center">
@@ -1030,8 +1037,16 @@ export default function EventDiscoverPage() {
                     src={expandedAttendee.videoUrl}
                     autoPlay
                     loop
+                    muted
                     playsInline
-                    className="absolute inset-0 w-full h-full object-cover z-0"
+                    ref={(el) => {
+                      if (el) {
+                        el.defaultMuted = true;
+                        el.muted = true;
+                        el.play().catch(() => {});
+                      }
+                    }}
+                    className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none"
                   />
                   <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-[#160308]/90 z-0" />
                 </>

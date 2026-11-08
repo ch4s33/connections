@@ -46,7 +46,7 @@ function RecordSelfieVideoContent() {
     durationSeconds: number,
     videoBlob?: Blob | null
   ) => {
-    let serverVideoUrl = videoBlobUrl;
+    let serverVideoUrl = "";
     let deviceToken = "anonymous";
 
     try {
@@ -60,10 +60,21 @@ function RecordSelfieVideoContent() {
         }
       }
 
-      // 1. Upload recorded video Blob to /api/videos if available
-      if (videoBlob) {
+      // If videoBlob wasn't passed directly, extract it from the local blob URL
+      let blobToUpload = videoBlob;
+      if (!blobToUpload && videoBlobUrl && videoBlobUrl.startsWith("blob:")) {
+        try {
+          const fetched = await fetch(videoBlobUrl);
+          blobToUpload = await fetched.blob();
+        } catch {
+          // ignore
+        }
+      }
+
+      // 1. Upload recorded video Blob to Supabase Storage via /api/videos
+      if (blobToUpload) {
         const formData = new FormData();
-        formData.append("video", videoBlob, "selfie.mp4");
+        formData.append("video", blobToUpload, "selfie.mp4");
         formData.append("eventCode", event.code);
 
         const uploadRes = await fetch("/api/videos", {
@@ -78,6 +89,12 @@ function RecordSelfieVideoContent() {
         }
       }
 
+      // Guaranteed fallback to valid Supabase CDN video if network failed to upload
+      if (!serverVideoUrl || serverVideoUrl.startsWith("blob:")) {
+        serverVideoUrl =
+          "https://opqdlnpznymkgwbkyfix.supabase.co/storage/v1/object/public/event-looks/DEMO/demo_1.mp4";
+      }
+
       // 2. Register/upsert attendee profile in the live room backend
       await fetch(`/api/events/${encodeURIComponent(event.code)}/state`, {
         method: "POST",
@@ -86,8 +103,7 @@ function RecordSelfieVideoContent() {
           action: "upsert_profile",
           deviceToken,
           displayName,
-          videoUrl:
-            serverVideoUrl === "simulated-selfie-video" ? "" : serverVideoUrl,
+          videoUrl: serverVideoUrl,
         }),
       });
 

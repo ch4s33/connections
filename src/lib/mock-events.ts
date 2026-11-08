@@ -117,13 +117,18 @@ export function getEventByCode(rawCode: string): EventDetails {
  * 8 Mock Attendees (Two 4-profile batches) ordered by proximity band:
  * 1. very_nearby -> 2. nearby -> 3. at_event
  */
+export const DEMO_LOOK_VIDEO_1 =
+  "https://opqdlnpznymkgwbkyfix.supabase.co/storage/v1/object/public/event-looks/DEMO/demo_1.mp4";
+export const DEMO_LOOK_VIDEO_2 =
+  "https://opqdlnpznymkgwbkyfix.supabase.co/storage/v1/object/public/event-looks/DEMO/demo_2.mp4";
+
 export const MOCK_ATTENDEES: AttendeeProfile[] = [
   {
     id: "att_1",
     eventId: "evt_neon_2026",
     displayName: "Teni",
     lookSummary: "Braided updo · Burgundy leather crop & silver chains",
-    videoUrl: "",
+    videoUrl: DEMO_LOOK_VIDEO_1,
     recordedAt: "6m ago",
     proximityBand: "very_nearby",
     isDiscoverable: true,
@@ -133,7 +138,7 @@ export const MOCK_ATTENDEES: AttendeeProfile[] = [
     eventId: "evt_neon_2026",
     displayName: "Kola",
     lookSummary: "Low fade & tinted frames · Vintage oversized black tee",
-    videoUrl: "",
+    videoUrl: DEMO_LOOK_VIDEO_2,
     recordedAt: "8m ago",
     proximityBand: "very_nearby",
     isDiscoverable: true,
@@ -143,7 +148,7 @@ export const MOCK_ATTENDEES: AttendeeProfile[] = [
     eventId: "evt_neon_2026",
     displayName: "Zainab",
     lookSummary: "Curly shoulder-length hair · Off-shoulder white knit top",
-    videoUrl: "",
+    videoUrl: DEMO_LOOK_VIDEO_1,
     recordedAt: "14m ago",
     proximityBand: "nearby",
     isDiscoverable: true,
@@ -153,7 +158,7 @@ export const MOCK_ATTENDEES: AttendeeProfile[] = [
     eventId: "evt_neon_2026",
     displayName: "Chidi",
     lookSummary: "Short locs · Unbuttoned silk patterned shirt",
-    videoUrl: "",
+    videoUrl: DEMO_LOOK_VIDEO_2,
     recordedAt: "19m ago",
     proximityBand: "nearby",
     isDiscoverable: true,
@@ -163,7 +168,7 @@ export const MOCK_ATTENDEES: AttendeeProfile[] = [
     eventId: "evt_neon_2026",
     displayName: "Amara",
     lookSummary: "Sleek high ponytail · Metallic halter top & cargo pants",
-    videoUrl: "",
+    videoUrl: DEMO_LOOK_VIDEO_1,
     recordedAt: "22m ago",
     proximityBand: "very_nearby",
     isDiscoverable: true,
@@ -173,7 +178,7 @@ export const MOCK_ATTENDEES: AttendeeProfile[] = [
     eventId: "evt_neon_2026",
     displayName: "Dami",
     lookSummary: "Buzz cut · Cream linen shirt & silver watch",
-    videoUrl: "",
+    videoUrl: DEMO_LOOK_VIDEO_2,
     recordedAt: "25m ago",
     proximityBand: "nearby",
     isDiscoverable: true,
@@ -183,7 +188,7 @@ export const MOCK_ATTENDEES: AttendeeProfile[] = [
     eventId: "evt_neon_2026",
     displayName: "Sade",
     lookSummary: "Fulani braids · Deep red satin slip dress",
-    videoUrl: "",
+    videoUrl: DEMO_LOOK_VIDEO_1,
     recordedAt: "31m ago",
     proximityBand: "at_event",
     isDiscoverable: true,
@@ -193,7 +198,7 @@ export const MOCK_ATTENDEES: AttendeeProfile[] = [
     eventId: "evt_neon_2026",
     displayName: "Tobi",
     lookSummary: "Twists · Black mesh sleeveless top & utility vest",
-    videoUrl: "",
+    videoUrl: DEMO_LOOK_VIDEO_2,
     recordedAt: "36m ago",
     proximityBand: "at_event",
     isDiscoverable: true,
@@ -210,7 +215,7 @@ export const INITIAL_INCOMING_INTERESTS: AttendeeProfile[] = [
     eventId: "evt_neon_2026",
     displayName: "Nia",
     lookSummary: "Long goddess braids · White corset top & denim jacket",
-    videoUrl: "",
+    videoUrl: DEMO_LOOK_VIDEO_1,
     recordedAt: "4m ago",
     proximityBand: "very_nearby",
     isDiscoverable: true,
@@ -220,7 +225,7 @@ export const INITIAL_INCOMING_INTERESTS: AttendeeProfile[] = [
     eventId: "evt_neon_2026",
     displayName: "Seyitan",
     lookSummary: "Taper fade · Dark burgundy crochet shirt",
-    videoUrl: "",
+    videoUrl: DEMO_LOOK_VIDEO_2,
     recordedAt: "11m ago",
     proximityBand: "nearby",
     isDiscoverable: true,
